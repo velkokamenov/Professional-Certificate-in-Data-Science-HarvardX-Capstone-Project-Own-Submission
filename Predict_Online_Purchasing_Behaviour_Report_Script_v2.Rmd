@@ -1,0 +1,1121 @@
+---
+title: Predict Online Purchasing Behaviour - Professional Certificate in Data Science by
+  HarvardX Capstone Project Own Submission
+author: "Velko Kamenov"
+date: "September 19, 2020"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+### N.B.!!! - MikTex Installation is required in order to produce the pdf document - https://miktex.org/download
+
+# The Script Takes around 6 minutes to run
+
+# Set global options valid for the whole markdown document
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 4)
+
+# This option disables scientifict notation for numbers visualization
+options(scipen = 999)
+
+# Install all needed for the project libraries if they are not found on the computer
+if(!require(rmarkdown)) install.packages("rmarkdown")
+if(!require(plyr)) install.packages("plyr")
+if(!require(dplyr)) install.packages("dplyr")
+if(!require(caret)) install.packages("caret")
+if(!require(tinytex)) install.packages("tinytex")
+if(!require(funModeling)) install.packages("funModeling")
+if(!require(stringr)) install.packages("stringr")
+if(!require(lubridate)) install.packages("lubridate")
+if(!require(ggplot2)) install.packages("ggplot2")
+if(!require(ggthemes)) install.packages("ggthemes")
+if(!require(mltools)) install.packages("mltools")
+if(!require(Hmisc)) install.packages("Hmisc")
+if(!require(data.table)) install.packages("data.table")
+if(!require(InformationValue)) install.packages("InformationValue")
+if(!require(glmnet)) install.packages("glmnet")
+if(!require(elasticnet)) install.packages("elasticnet")
+if(!require(rpart)) install.packages("rpart")
+if(!require(randomForest)) install.packages("randomForest")
+if(!require(broom)) install.packages("broom")
+
+# Import libraries
+library(rmarkdown)
+library(plyr)
+library(dplyr)
+library(caret)
+library(tinytex)
+library(funModeling)
+library(stringr)
+library(lubridate)
+library(ggplot2)
+library(ggthemes)
+library(mltools)
+library(Hmisc)
+library(data.table)
+library(InformationValue)
+library(glmnet)
+library(elasticnet)
+library(rpart)
+library(randomForest)
+library(broom)
+
+```
+
+# 1. Introduction
+
+The aim of this report is to examine the Online Shoppers Purchasing Intention Dataset and to develop and evaluate the best machine learning classification model for predicting whether an online customer will make a purchase or not based on the predictor features in the dataset. This project is built under the Professional Certificate in Data Science by HarvardX program as a Capstone Project on a dataset of student's choice. 
+
+The dataset used is downloaded from UCI Machine Learning Repository and was created and uploaded by **Sakar, C.O., Polat, S.O., Katircioglu, M. et al. Neural Comput & Applic (2018)**.
+
+The raw dataset is available on the following link: https://archive.ics.uci.edu/ml/machine-learning-databases/00468/
+
+Four classification machine learning techniques are tested and their results compared to one another - Logistic Regression, Elastic Net, Decision Tree and Random Forest. The algorithms are implemented via the caret package in R and some of their parameters are tuned via cross-validation on the train set. 
+
+The algorithms performance is compared based on AUC, Sensitivity, Specificity and Precision on the test set. 
+
+The following 3 sections present the analysis, results and conclusions from the modelling. 
+
+# 2. Analysis
+
+In this section of the report are presented the data exploration, data preprocessing, feature engineering,
+feature relationships analysis as well as the modelling techniques used to generate the final predictive model.
+
+Since the dataset requires modelling on binary classificatin problem - the numeric predictor features are visually examined with the target via box plots while the categorical predictor features are visually examined with the target via segmented bar charts. 
+
+## 2.1. Data Exploration
+
+```{r Load Data, results='hide'}
+
+# Load dataset for analysis from UCI Machine Learning Repository
+Online_Purchasing_Dataset = fread("https://archive.ics.uci.edu/ml/machine-learning-databases/00468/online_shoppers_intention.csv")
+
+# Get number of observations and features in the raw dataset
+n_obs = nrow(Online_Purchasing_Dataset)
+n_features = ncol(Online_Purchasing_Dataset)
+
+# Create a data frame with summary of the features
+Var_Summary = df_status(Online_Purchasing_Dataset)
+
+```
+
+The raw dataset has `r n_obs` observations and `r n_features` features.
+
+```{r Dataset Summary}
+# Include the summary table in the pdf report
+knitr::kable(Var_Summary, caption = "Online Purchasing Dataset Variables Summary")
+
+```
+
+We see that there are no missing values accross the variables in the dataset. 
+
+Here are the features meanings given by the dataset providers: 
+
+* **Administrative, Administrative Duration, Informational, Informational Duration, Product Related and Product Related Duration** - number of different types of pages visited by the visitor in that session and total time spent in each of these page categories
+
+* **Bounce Rate** - Google Analytics Metric. The percentage of visitors who enter the site from that page and then leave ("bounce") without triggering any other requests to the analytics server during that session
+
+* **Exit Rate** - Google Analytics Metric. Feature for a specific web page is calculated as for all pageviews to the page, the percentage that were the last in the session
+
+* **Page Value** -  the average value for a web page that a user visited before completing an e-commerce transaction. 
+
+* **Special Day** - indicates the closeness of the site visiting time to a specific special day (e.g. Mother's Day, Valentine's Day) in which the sessions are more likely to be finalized with transaction.
+
+* **Operating system** - Operating System of the user.
+
+* **Browser** - Browser of the user.
+
+* **Region** - Region of the user. 
+
+* **Month** - month of the transaction
+
+* **Weekend** - Flag if the transactions was made during the weekend.
+
+* **Traffic type** - Traffic Type of the user
+
+* **Visitor type** - New or Returning Visitor
+
+* **Revenue** - The target column. TRUE values mean a purchase was made and FALSE mean a purchase was not made. This is the target variable we are going to build a classification model to forecast. 
+
+```{r Outcome Col Summary}
+# Include in the report a variable with the shares of TRUE and FALSE outcomes in the dataset
+
+Revenue_Dist = data.frame(table(Online_Purchasing_Dataset$Revenue))
+
+# Count observations with purchase
+TRUE_Outcome = Revenue_Dist %>%
+  filter(Var1 == "TRUE") %>%
+  pull(Freq)
+
+# Count observations with no purchase
+FALSE_Outcome = Revenue_Dist %>%
+  filter(Var1 == "FALSE") %>%
+  pull(Freq)
+
+# Include the summary table in the report
+knitr::kable(Revenue_Dist %>%
+               plyr::rename(c("Var1" = "Revenue"
+                              , "Freq" = "Frequency"
+                              )), caption = "Outcome Variable Summary")
+
+```
+
+From the distribution of the the two possible outcomes - True or False we see that a lot more clients do not make a purchase. The number of observations with no purchases is `r FALSE_Outcome` while the number of observations with purchase is `r TRUE_Outcome`. We must keep this in mind when dividing the data in Train/Test samples and to do the sample split with **stratification** - i.e. with keeping the proportion of True and False outcomes in the Train and Test Sample relatively close. 
+
+## 2.2. Feature Transformations
+
+We see that some column data types do not correspond correctly to the statistical data type of the variables behind them and some column names can be changed in order to make the interpretation easier and more intuitive. That is why some of the feature types and column names are changed.  
+
+```{r Transform Features, results='hide'}
+# Transform data types and rename columns
+Online_Purchasing_Dataset_Transformed = Online_Purchasing_Dataset %>%
+  # transform categorical variables to factors - this is going to be helpful for the visualization and modelling
+  mutate(SpecialDay = as.factor(SpecialDay)
+         , OperatingSystems = as.factor(OperatingSystems)
+         , Browser = as.factor(Browser)
+         , Region = as.factor(Region)
+         , TrafficType = as.factor(TrafficType)
+         , Month = as.factor(Month)
+         , VisitorType = as.factor(VisitorType)
+         , Weekend = as.factor(as.character(Weekend))
+         , Revenue = as.character(Revenue)
+         , Revenue = ifelse(Revenue == "TRUE",1,0)
+         , Revenue = as.factor(Revenue)
+         ) %>%
+  # rename the Revenue column to Purchase to make the name more intuitive
+  plyr::rename(c("Revenue" = "Purchase")) %>%
+  # Create one character column with the Purchase Yes/No - it is more suitable for some of the visualizations and modelling
+  mutate(Purchase_Yes_No = ifelse(as.character(Purchase) == "0","No","Yes"))
+
+# Make df with summary of the transformed and renamed vars
+Var_Transformed_Summary = df_status(Online_Purchasing_Dataset_Transformed)
+
+```
+
+Here is the summary of the dataset after transformations of column types:
+
+```{r Transformed Data Summary Table}
+# Include new summary table in the report 
+knitr::kable(Var_Transformed_Summary, caption = "Online Purchasing Transformed Dataset Variables Summary")
+
+```
+
+## 2.3. Features Relationship to Target
+
+In this section we examine visually the features relationships to target. For the numeric predictor variables we use box plots and for categorical predictor geatures we use segmented 100% bar charts. 
+
+### 2.3.1. Numeric Features vs. the Target
+
+The higher the Number of Administrative Pages the higher the probability that a transaction will end up with purchase. 
+
+```{r FR 1}
+# Visualize relationship between Administrative and Purchase via box plot
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = Administrative)) +
+  geom_boxplot()+
+  labs(title="Number of Administrative Pages vs. Purchase Decision Box-Plot",x="Purchase", y = "Number of Administrative Pages") +
+  theme_minimal()
+
+```
+
+The higher the Time Spent on Administrative Pages the higher the probability that a transaction will end up with purchase. 
+
+```{r FR 2}
+# Visualize relationship between Administrative Duration and Purchase via box plot
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = Administrative_Duration)) +
+  geom_boxplot()+
+  labs(title="Time Spent on Administrative Pages vs. Purchase Decision Box-Plot",x="Purchase", y = "Time Spent on Administrative Pages") +
+  theme_minimal()
+
+```
+
+No clear relationship between the Number of Informational Pages visited and the probability that a transaction will end up with purchase can be observed. 
+
+```{r FR 3}
+# Visualize relationship between Informational and Purchase via box plot
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = Informational)) +
+  geom_boxplot()+
+  labs(title="Number of Informational Pages vs. Purchase Decision Box-Plot",x="Purchase", y = "Number of Informational Pages") +
+  theme_minimal()
+
+```
+
+No clear relationship between the Time Spent on Informational Pages visited and the probability that a transaction will end up with purchase can be observed. 
+
+```{r FR 4}
+# Visualize relationship between Informational Duration and Purchase via box plot
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = Informational_Duration)) +
+  geom_boxplot()+
+  labs(title="Time Spent on Informational Pages vs. Purchase Decision Box-Plot",x="Purchase", y = "Time Spent on Informational Pages") +
+  theme_minimal()
+
+```
+
+The higher the Number of Product Related Pages the higher the probability that a transaction will end up with purchase. 
+
+```{r FR 5}
+# Visualize relationship between Product Related and Purchase via box plot
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = ProductRelated)) +
+  geom_boxplot()+
+  labs(title="Number of Product Related Pages vs. Purchase Decision Box-Plot",x="Purchase", y = "Number of Product Related Pages") +
+  theme_minimal()
+
+```
+
+No clear relationship between the Time Spent on Product Related Pages visited and the probability that a transaction will end up with purchase can be observed. 
+
+```{r FR 6}
+# Visualize relationship between Product Related Duration and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = ProductRelated_Duration)) +
+  geom_boxplot()+
+  labs(title="Time Spent on Product Related Pages vs. Purchase Decision Box-Plot",x="Purchase", y = "Time Spent on Product Related Pages") +
+  theme_minimal()
+
+```
+
+The higher the Bounce Rate the higher the lower probability that a transaction will end up with purchase. 
+
+```{r FR 7}
+# Visualize relationship between Bounce Rate and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = BounceRates)) +
+  geom_boxplot()+
+  labs(title="Bounce Rate vs. Purchase Decision Box-Plot",x="Purchase", y = "Bounce Rate") +
+  theme_minimal()
+
+```
+
+The higher the Exit Rate the higher the lower probability that a transaction will end up with purchase. 
+
+```{r FR 8}
+# Visualize relationship between Exit Rates and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = ExitRates)) +
+  geom_boxplot()+
+  labs(title="Exit Rate vs. Purchase Decision Box-Plot",x="Purchase", y = "Exit Rate") +
+  theme_minimal()
+
+```
+
+The higher Average Number of Pages Visited before Transaction the higher the probability that a transaction will end up with purchase. 
+
+```{r FR 9}
+# Visualize relationship between Page Values and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+  ggplot(aes(x = Purchase_Yes_No, y = PageValues)) +
+  geom_boxplot()+
+  labs(title="Average Number of Pages Visited before Transaction vs. Purchase Decision Box-Plot",x="Purchase", y = "Average Number of Pages Visited before Transaction") +
+  theme_minimal()
+
+```
+
+### 2.3.2. Categorical Features vs. the Target
+
+The months November, October, September, August, July are months in which it is more likely for a transaction to end up as a purchase. 
+
+```{r FR 10}
+# Visualize relationship between Month and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+ggplot(aes(x = Month, 
+           fill = Purchase_Yes_No)) + 
+  geom_bar(position = "fill") +
+  labs(y = "Proportion")+
+  labs(title="Month vs. Purchase Decision Segmented Bar Chart",x="Month", y = "Purchase", fill = "Purchase") +
+  theme_minimal()
+
+```
+
+Special Day values of 0 are more likely to end up with a purchase. 
+
+```{r FR 11}
+# Visualize relationship between Special Day and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+ggplot(aes(x = SpecialDay, 
+           fill = Purchase_Yes_No)) + 
+  geom_bar(position = "fill") +
+  labs(y = "Proportion")+
+  labs(title="Special Day vs. Purchase Decision Segmented Bar Chart",x="Special Day", y = "Purchase", fill = "Purchase") +
+  theme_minimal()
+
+```
+
+Operating Systems 2,4,5,7,8 are more likely to end up with a purchase. 
+
+```{r FR 12}
+# Visualize relationship between Operating Systems and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+ggplot(aes(x = OperatingSystems, 
+           fill = Purchase_Yes_No)) + 
+  geom_bar(position = "fill") +
+  labs(y = "Proportion")+
+  labs(title="Operating Systems vs. Purchase Decision Segmented Bar Chart",x="Operating System", y = "Purchase", fill = "Purchase" ) +
+  theme_minimal()
+
+```
+
+No clear relationship between region and purchase behaviour can be observed. 
+
+```{r FR 13}
+# Visualize relationship between Region and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+ggplot(aes(x = Region, 
+           fill = Purchase_Yes_No)) + 
+  geom_bar(position = "fill") +
+  labs(y = "Proportion")+
+  labs(title="Region vs. Purchase Decision Segmented Bar Chart",x="Region", y = "Purchase", fill = "Purchase" ) +
+  theme_minimal()
+
+```
+
+Traffic coming from browsers 4,5,10,11,12,13 is more likely to lead to a purchase. 
+
+```{r FR 14}
+# Visualize relationship between Browser and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+ggplot(aes(x = Browser, 
+           fill = Purchase_Yes_No)) + 
+  geom_bar(position = "fill") +
+  labs(y = "Proportion")+
+  labs(title="Browser vs. Purchase Decision Segmented Bar Chart",x="Browser", y = "Purchase", fill = "Purchase" ) +
+  theme_minimal()
+
+```
+
+Traffic type 2,4,5,7,8,10,11,16 and 20 are more likely to lead to a purchase. 
+
+```{r FR 15}
+# Visualize relationship between Traffic Type and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+ggplot(aes(x = TrafficType, 
+           fill = Purchase_Yes_No)) + 
+  geom_bar(position = "fill") +
+  labs(y = "Proportion")+
+  labs(title="Traffic Type vs. Purchase Decision Segmented Bar Chart",x="Traffic Type", y = "Purchase", fill = "Purchase" ) +
+  theme_minimal()
+
+```
+
+New visitors are more likely to make a purchase. 
+
+```{r FR 16}
+# Visualize relationship between Visitor Type and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+ggplot(aes(x = VisitorType, 
+           fill = Purchase_Yes_No)) + 
+  geom_bar(position = "fill") +
+  labs(y = "Proportion")+
+  labs(title="Visitor Type vs. Purchase Decision Segmented Bar Chart",x="Visitor Type", y = "Purchase", fill = "Purchase" ) +
+  theme_minimal()
+
+```
+
+No clear relationship between weekend or weekday and purchase behaviour can be observed. 
+
+```{r FR 17}
+# Visualize relationship between Weekend and Purchase via box plot
+
+Online_Purchasing_Dataset_Transformed %>%
+ggplot(aes(x = Weekend, 
+           fill = Purchase_Yes_No)) + 
+  geom_bar(position = "fill") +
+  labs(y = "Proportion")+
+  labs(title="Weekend vs. Purchase Decision Segmented Bar Chart",x="Weekend", y = "Purchase", fill = "Purchase" ) +
+  theme_minimal()
+
+```
+
+## 2.4. Correlations
+
+In this section we examine the correlations among numeric and categorical variables. For linear models like Logistic Regression we know it is not good to include correlated variables in the final models. 
+
+We see that some variables have strong correlations between them. The correlation between Exit Rate and Bounce Rate is 0.91. The correleation between Product Related and Product Related Duration is 0.86. The correlation between Administrative and Administrative Duration is 0.6. The correlation between Informational, and Informational, Duration is 0.62. 
+
+For the numeric variables we calculate the Pearson Correlation Coefficient. This is a statistic that measures linear correlation between two variables X and Y. It has a value between +1 and ???1. A value of +1 is total positive linear correlation, 0 is no linear correlation, and ???1 is total negative linear correlation.
+
+For better visibility the following naming convetion is used for the correlation coefficients:
+
+* Administrative - A
+* Administrative Duration - AD
+* Informational - I
+* Informational Duration - ID
+* Product Related - PR
+* Product Related Duration - PRD
+* Bounce Rates - BR
+* Exit Rates - ER
+* Page Value - PV
+* Special Day - SD
+* Month - M
+* Operating System - OS
+* Browser - B
+* Region - R
+* Trafic Type - TT
+* Visitor Type - VT
+* Weekeng - W
+
+
+```{r numeric vars corr pearson}
+# Calculate Pearson correlation coefficients for numeric variables and format the table to be visualized in the report
+corr_numeric_vars <- rcorr(as.matrix(Online_Purchasing_Dataset_Transformed %>%
+                          select(Administrative, Administrative_Duration, Informational
+                                 , Informational_Duration, ProductRelated, ProductRelated_Duration
+                                 , BounceRates, ExitRates, PageValues) %>%
+                            plyr::rename(c("Administrative" = "A"
+                                           , "Administrative_Duration" = "AD"
+                                           , "Informational" = "I"
+                                           , "Informational_Duration" = "ID"
+                                           , "ProductRelated" = "PR"
+                                           , "ProductRelated_Duration" = "PRD"
+                                           , "BounceRates" = "BR"
+                                           , "ExitRates" = "ER"
+                                           , "PageValues" = "PV"
+                                           ))
+                          
+                          )
+                          , type = "pearson"
+                          )
+# Make transformation of nthe correlation matrix for better visibility in report
+corr_numeric_vars = data.frame(corr_numeric_vars$r) # covert to data frame
+
+corr_numeric_vars = setDT(corr_numeric_vars, keep.rownames = TRUE)[] # set row names to first colum
+
+corr_numeric_vars = corr_numeric_vars %>%
+  select(variable = rn, everything()) # rename rn to variable and change column order
+
+corr_numeric_vars_rounded = round(corr_numeric_vars[,2:length(corr_numeric_vars)], 2) # round to the 2-nd digit
+
+# create final data frame with rounded data 
+corr_numeric_vars = corr_numeric_vars %>%
+  select(variable) %>%
+  bind_cols(corr_numeric_vars_rounded)
+
+# Include the table with correlations in the report. 
+knitr::kable(corr_numeric_vars, caption = "Pearson correlation coefficient among numeric variables")
+
+```
+
+For the categorical variables we calculate the Spearman Correlation Coefficient.The Spearman correlation between two variables is equal to the Pearson correlation between the rank values of those two variables. Spearman's correlation assesses monotonic relationships (whether linear or not).
+
+```{r numeric and categorical vars corr spearman}
+# Calculate Spearman correlation coefficients for numeric variables and format the table to be visualized in the report
+corr_numeric_categorical_vars <- rcorr(as.matrix(Online_Purchasing_Dataset_Transformed %>%
+                          select(-Purchase,-Purchase_Yes_No) %>%
+                          mutate(SpecialDay = rank(SpecialDay)
+                                 , Month = rank(Month)
+                                 , OperatingSystems = rank(OperatingSystems)
+                                 , Browser = rank(Browser)
+                                 , Region = rank(Region)
+                                 , TrafficType = rank(TrafficType)
+                                 , VisitorType = rank(VisitorType)
+                                 , Weekend = rank(Weekend)
+                                 ) %>%
+                            plyr::rename(c("Administrative" = "A"
+                                           , "Administrative_Duration" = "AD"
+                                           , "Informational" = "I"
+                                           , "Informational_Duration" = "ID"
+                                           , "ProductRelated" = "PR"
+                                           , "ProductRelated_Duration" = "PRD"
+                                           , "BounceRates" = "BR"
+                                           , "ExitRates" = "ER"
+                                           , "PageValues" = "PV"
+                                           , "SpecialDay" = "SD"
+                                           , "Month" = "M"
+                                           , "OperatingSystems" = "OS"
+                                           , "Browser" = "B"
+                                           , "Region" = "R"
+                                           , "TrafficType" = "TT"
+                                           , "VisitorType" = "VT"
+                                           , "Weekend" = "W"
+                                           ))
+                          )
+                          , type = "spearman"
+                          )
+
+# Make transformation of nthe correlation matrix for better visibility in report
+corr_numeric_categorical_vars = data.frame(corr_numeric_categorical_vars$r)
+
+
+corr_numeric_categorical_vars = setDT(corr_numeric_categorical_vars, keep.rownames = TRUE)[] # set row names to first colum
+
+corr_numeric_categorical_vars = corr_numeric_categorical_vars %>%
+  select(variable = rn, everything()) # rename rn to variable and change column order
+
+# Round to the 2-nd digit
+corr_numeric_categorical_vars_rounded = round(corr_numeric_categorical_vars[,2:length(corr_numeric_categorical_vars)], 1)
+
+# create final data frame with rounded data 
+corr_numeric_categorical_vars = corr_numeric_categorical_vars %>%
+  select(variable) %>%
+  bind_cols(corr_numeric_categorical_vars_rounded)
+
+# Include the table with correlations in the report. 
+knitr::kable(corr_numeric_categorical_vars, caption = "Spearman correlation coefficient among numeric and categorical variables")
+
+```
+
+
+## 2.5. Train/Test Split
+
+We divide the sample in train/test sets in proportions 70%/30%. These proportions are chosen as the best balance between getting enough data for training and testing given the total number of observations in the dataset. If the dataset consisted of more observations a ratio of 80%/20% or even 90%/10% would have been suitable. But since the observations in the analysed dataset are just `r nrow(Online_Purchasing_Dataset_Transformed)` it is good to set 30% aside as test set in order to get enough observations to make valid conclusions. 
+
+The split is done with the createDataPartition function from the caret package which makes the split stratified. This is needed because the target variable is imbalanced. 
+
+```{r Stratified Train Test Split}
+set.seed(1) # set seed for reproducability
+train.index <- createDataPartition(Online_Purchasing_Dataset_Transformed$Purchase, p = .7, list = FALSE) # 70% of the data set for train ser
+Train_Set <- Online_Purchasing_Dataset_Transformed[ train.index,] # Define train set based on indices
+Test_Set  <- Online_Purchasing_Dataset_Transformed[-train.index,] # Define test set based on remaining indices
+
+# Calculate purchase outcome in train set
+Train_Purchase_Share = round(sum(as.numeric(as.character(Train_Set$Purchase))) / nrow(Train_Set),4)
+
+# Calculate purchase outcome in test set
+Test_Purchase_Share = round(sum(as.numeric(as.character(Test_Set$Purchase))) / nrow(Test_Set),4)
+
+```
+
+We get the following samples:
+
+* Train Sample with `r nrow(Train_Set)` observations and `r Train_Purchase_Share*100`% of purchases made.
+
+* Test Sample with `r nrow(Test_Set)` observations and `r Test_Purchase_Share*100`% of purchases made.
+
+## 2.6. Modelling
+
+This section presents the modelling techniques used on the data as well as comparison between the results from the predictive models. Given the fact that the outcome has two classes that are highly imbalanced the Area Under the Curve (AUC), Sensitivity, Specificity and Precision are going to be used as the main metrics to evaluate the quality of the predictive models. The accuracy metric is going to be biased as a model predicting no purchases would result in 85% accuracy. 
+
+The chosen metric for model evaluation are explained here:
+
+* **AUC** - ROC curve is a performance measurement for classification problem at various thresholds settings. ROC is a probability curve and AUC represents degree or measure of separability. It tells how much model is capable of distinguishing between classes.
+
+* **Sensitivity** - measures the proportion of positives that are correctly identified.
+
+* **Specificity** - measures the proportion of negatives that are correctly identified.
+
+* **Precision** - is the fraction of relevant instances among the retrieved instances.
+
+Because the problem we are trying to solve aims at predicting if a purchase is going to be made or not - **the Precision metric can be viewed as one with special importance along with AUC because it is expected that a strategy and some costs related to clients predicted to make a purchase are going to be persued.**
+
+### 2.6.1. Logistic Regression
+
+The Logistic Regression Model is the first which predictive power is tested. Logistic regression is a statistical model that in its basic form uses a logistic function to model a binary dependent variable. It is a linear model in terms of log of odds and hence represent a simplistic approach good to be tested as benchmark for comparison with more complicated models. 
+
+Only variables with no high correlations with other variables are included in the final model and also only statistically significant variables and categories are included in the final model. 
+
+```{r Log Reg Model Results}
+# Build logistic regresion model on the train set 
+Log_Reg_Model = train(
+  form = Purchase ~ .,
+  data = Train_Set %>%
+    # discard the variables which show no statistically significant relationship with the target
+    select(-Purchase_Yes_No
+           , -Administrative
+           , -Administrative_Duration
+           , -Informational
+           , -Informational_Duration
+           , -ProductRelated
+           , -ProductRelated_Duration
+           , -BounceRates
+           , -SpecialDay
+           , -Browser
+           , -Region
+           , -VisitorType
+           , -Weekend
+           ) %>%
+    # group Month, Operating System and Traffic Type in homogenous group based on knowledge from plots
+    mutate(Month = ifelse(Month %in% c("Nov","Oct","Sep","Aug","Jul"),"Nov-Oct-Sep-Aug-Jul","Jan-Feb-March-Apr-May-June-December")
+           , OperatingSystems = ifelse(OperatingSystems %in% c("1","2","4","5","7","8"),"1-2-4-5-7-8","3-6")
+           , TrafficType = ifelse(TrafficType %in% c("7","8","16","20","10","11","5","2"),"2-5-7-8-10-11-16-20","1-3-4-6-9-12-13-14-15-17-18-19")
+           ),
+  method = "glm",
+  family = "binomial"
+)
+
+# Calculate AUC on Train Set
+Log_Reg_Train_Set_AUC = round(auc_roc(Log_Reg_Model$finalModel$fitted.values, ordered(Log_Reg_Model$trainingData$.outcome)),3)
+
+# Plot AUC on Train Set
+#plotROC(actuals=Log_Reg_Model$trainingData$.outcome, predictedScores=Log_Reg_Model$finalModel$fitted.values)
+
+# Make Predictions on Test Set
+Log_Reg_Predictions_Test_Set = predict(Log_Reg_Model, newdata = Test_Set %>%
+    select(-Purchase_Yes_No
+           , -Administrative
+           , -Administrative_Duration
+           , -Informational
+           , -Informational_Duration
+           , -ProductRelated
+           , -ProductRelated_Duration
+           , -BounceRates
+           , -SpecialDay
+           , -Browser
+           , -Region
+           , -VisitorType
+           , -Weekend
+           ) %>%
+    mutate(Month = ifelse(Month %in% c("Nov","Oct","Sep","Aug","Jul"),"Nov-Oct-Sep-Aug-Jul","Jan-Feb-March-Apr-May-June-December")
+           , OperatingSystems = ifelse(OperatingSystems %in% c("1","2","4","5","7","8"),"1-2-4-5-7-8","3-6")
+           , TrafficType = ifelse(TrafficType %in% c("7","8","16","20","10","11","5","2"),"2-5-7-8-10-11-16-20","1-3-4-6-9-12-13-14-15-17-18-19")
+           )
+    , type = "prob"
+    ) %>%
+  pull(`1`)
+
+Log_Reg_Predictions_Test_Set_CM = Log_Reg_Predictions_Test_Set %>%
+  data.frame() %>%
+  mutate(Class = ifelse(`.` >= Test_Purchase_Share,1,0)) %>%
+  pull(Class)
+
+# Calculate AUC on Test Set
+Log_Reg_Test_Set_AUC = round(auc_roc(Log_Reg_Predictions_Test_Set, ordered(Test_Set$Purchase)),3)
+
+# Estimate Sensitivity Specificity on Test Set
+confmat <- confusionMatrix(Test_Set$Purchase, Log_Reg_Predictions_Test_Set_CM)
+
+# Calculate Sensitivity, Specificity and Precision on Test set
+Log_Reg_Sensitivity_Test_Set = round(confmat[2,]$`1`/sum(confmat[2,]),2)*100
+Log_Reg_Specificity_Test_Set = round(confmat[1,]$`0`/sum(confmat[1,]),2)*100
+Log_Reg_Precision_Test_Set = round(confmat[2,]$`1`/sum(confmat$`1`),2)*100
+
+```
+
+The Logistic Regression Model gives the following results on the test set:
+
+* AUC: `r Log_Reg_Test_Set_AUC`
+* Sensitivity: `r Log_Reg_Sensitivity_Test_Set`%
+* Specificity: `r Log_Reg_Specificity_Test_Set`%
+* Precision: `r Log_Reg_Precision_Test_Set`%
+
+They are achived by the following model:
+
+```{r Log Reg Model Equation}
+# Extract logistic regression model summary in a df
+Log_Reg_Model_Summary = data.frame(summary(Log_Reg_Model)$coefficients)
+
+# set row names as a column
+Log_Reg_Model_Summary = setDT(Log_Reg_Model_Summary, keep.rownames = TRUE)[] 
+
+# rename and format variables
+Log_Reg_Model_Summary = Log_Reg_Model_Summary %>%
+  plyr::rename(c("rn" = "Variable"
+                 ,"Estimate" = "Coefficient"
+                 ,"Std..Error" = "Standard_Error"
+                 , "z.value" = "z_value"
+                 , "Pr...z.." = "p_value"
+                 )
+               ) %>%
+  mutate(Coefficient = round(Coefficient,3)
+         , Standard_Error = round(Standard_Error,3)
+         , z_value = round(z_value,3)
+         , p_value = round(p_value,4)
+         )
+
+# Include the table with correlations in the report. 
+knitr::kable(Log_Reg_Model_Summary, caption = "Logistic Regression Model Summary")
+
+```
+
+
+```{r Log Reg Model Plots}
+# Plot AUC on Test Set
+plotROC(actuals = Test_Set$Purchase, predictedScores = Log_Reg_Predictions_Test_Set)
+
+```
+
+* **!N.B.** Please note that the AUC values in the plots differ slightly from the calculated in the code. This is done because of differences in calculations of the integrals needed for the AUC estimate!
+
+* **!N.B.** Please note that the confusion matrices and respectively the Sensitivity, Specificity and Precision metrics are based not on the standard 50% threshold value but on the average purchase rate in the test set - `r Test_Purchase_Share*100`%. This is done because of the fact that the predicted target is highly imbalanced and from a business perspective it makes more sense to evaluate with this threshold. 
+
+### 2.6.2. Elastic Net
+
+The elastic net is a regularized regression method that linearly combines the L1 and L2 penalties of the lasso and ridge methods. It shrinks the coefficients of correlated variables to obtain stable model.
+
+Two parameters of the Elastic Net model are tuned via 5-fold cross validation in the train set because they can have the biggest effect on the model. The 5-fold corss validation for an elastic net model is stable and not much computantional power is needed:
+
+* **alpha** - the degree of mixing between ridge regression and lasso regression. The closer to 0 - the closer the model to ridge regression. The closer to 1 - the closer the model to lasso regression. 
+* **lambda** - the shrinkage parameter. When equal to 0 - no shrinkage is performed. The higher than zero - the more shrinkage in coefficients. 
+
+```{r Elastic Net model build}
+set.seed(1)
+# Tune Elastic Net with a 5-fold cross validation in Train set
+Elastic_Net_Tune = train(
+  Purchase_Yes_No ~ ., 
+  data = Train_Set %>%
+    select(-Purchase) %>%
+    mutate(SpecialDay = make.names(SpecialDay)
+           , Month = make.names(Month)
+           , OperatingSystems = make.names(OperatingSystems)
+           , Browser = make.names(Browser)
+           , Region = make.names(Region)
+           , TrafficType = make.names(TrafficType)
+           , VisitorType = make.names(VisitorType)
+           , Weekend = make.names(Weekend)
+           ),
+  method = "glmnet",
+  trControl = trainControl(method = "cv"
+                           , number = 5
+                           , classProbs=TRUE
+                           , summaryFunction = twoClassSummary),
+  # alpha and lambda values to tune
+  tuneGrid = expand.grid(alpha = c(0,0.1,0.3,0.5,0.7,0.9,1), lambda = c(0,0.0001,0.001,0.01,0.1)),
+  metric = "ROC"
+)
+
+# results from different parameters combinations
+Elastic_Net_Parameter_Tuning_Results = Elastic_Net_Tune$results 
+
+# aggregate based on alpha param
+Elastic_Net_Parameter_Tuning_Results_Grouped = Elastic_Net_Parameter_Tuning_Results %>%
+  group_by(alpha) %>%
+  summarise(ROC = max(ROC)) %>%
+  ungroup()
+
+# extract values from best tune
+Elastic_Net_Best_Tune = Elastic_Net_Tune$bestTune
+
+```
+
+From the ROC plot we see that the optimal value for alpha parameter is `r Elastic_Net_Best_Tune %>% pull(alpha)` and for the lambda parameter is `r Elastic_Net_Best_Tune %>% pull(lambda)`.
+
+```{r Elastic Net Tuned best results}
+# plot AUC vs the different alpha values tested
+ggplot(data=Elastic_Net_Parameter_Tuning_Results_Grouped, aes(x=alpha, y=ROC, group=1)) +
+  geom_line()+
+  geom_point() +
+  labs(title="Alpha Parameter vs. ROC", y = "ROC", x = "alpha" ) +
+  theme_minimal()
+
+```
+
+```{r Elastic Net Model Results}
+# extract values from best tune
+Elastic_Net_Best_Tune = Elastic_Net_Tune$bestTune
+
+# predictor variables for model
+x <- model.matrix(Purchase_Yes_No~., Train_Set %>% select(-Purchase))[,-1]
+# outcome variable for model
+y <- Train_Set$Purchase_Yes_No
+
+# Fit the final model elastic net model on the training data
+Elastic_Net_Model <- glmnet(x, y, alpha = Elastic_Net_Best_Tune %>% pull(alpha), family = "binomial",
+                                   lambda = Elastic_Net_Best_Tune %>% pull(lambda))
+
+# Make predictions on the train data
+Test_Pred <- model.matrix(Purchase_Yes_No ~., Test_Set %>% select(-Purchase))[,-1]
+Test_Probs <- data.frame(exp(Elastic_Net_Model %>% predict(newx = Test_Pred)) / (1 + exp(Elastic_Net_Model %>% predict(newx = Test_Pred)))) # extract probabilities from scores
+
+# Calculate AUC on Test Set
+Elastic_Net_Test_Set_AUC = round(auc_roc(Test_Probs$s0, ordered(Test_Set$Purchase)),3)
+
+#plotROC(actuals = Test_Set$Purchase, predictedScores = Test_Probs$s0)
+
+Test_Probs_CM = Test_Probs %>%
+  mutate(Class = ifelse(`s0` >= Test_Purchase_Share,1,0)) %>%
+  pull(Class)
+
+# Estimate Sensitivity Specificity on Test Set
+confmat <- confusionMatrix(Test_Set$Purchase, Test_Probs_CM)
+
+# Calculate Sensitivity, Specificity and Precision on Test set
+Elastic_Net_Sensitivity_Test_Set = round(confmat[2,]$`1`/sum(confmat[2,]),2)*100
+Elastic_Net_Specificity_Test_Set = round(confmat[1,]$`0`/sum(confmat[1,]),2)*100
+Elastic_Net_Precision_Test_Set = round(confmat[2,]$`1`/sum(confmat$`1`),2)*100
+
+```
+
+The Elastic Model gives the following results on the test set:
+
+* AUC: `r Elastic_Net_Test_Set_AUC`
+* Sensitivity: `r Elastic_Net_Sensitivity_Test_Set`%
+* Specificity: `r Elastic_Net_Specificity_Test_Set`%
+* Precision: `r Elastic_Net_Precision_Test_Set`%
+
+```{r Elastic Net Model Plots}
+
+# Plot AUC on Test Set
+plotROC(actuals = Test_Set$Purchase, predictedScores = Test_Probs$s0)
+
+```
+
+### 2.6.3. Decision Tree
+
+A decision tree is a flowchart-like structure in which each internal node represents a "test" on an attribute (e.g. whether a coin flip comes up heads or tails), each branch represents the outcome of the test, and each leaf node represents a class label (decision taken after computing all attributes). The paths from root to leaf represent classification rules. 
+
+The **complexity parameter (cp)** is tuned. This parameter is used to control the size of the decision tree and to select the optimal tree size. If the cost of adding another variable to the decision tree from the current node is above the value of cp, then tree building does not continue. 
+
+This is the most important parameter in the decision tree model and the caret package allows for tuning.
+
+The tuning is done via 5-fold cross valition. The 5-fold corss validation for a decision tree model is stable and not much computantional power is needed to perform it. 
+
+```{r Tune Decision Tree Model}
+set.seed(1)
+# Tune Decision Tree
+Decision_Tree_Tune = train(
+  Purchase_Yes_No ~ ., 
+  data = Train_Set %>%
+    select(-Purchase) %>%
+    # use the make.names funtion on factor predictor vars to avoid errors in model build
+    mutate(SpecialDay = make.names(SpecialDay)
+           , Month = make.names(Month)
+           , OperatingSystems = make.names(OperatingSystems)
+           , Browser = make.names(Browser)
+           , Region = make.names(Region)
+           , TrafficType = make.names(TrafficType)
+           , VisitorType = make.names(VisitorType)
+           , Weekend = make.names(Weekend)
+           )
+  , method = "rpart",
+  trControl = trainControl(method = "cv"
+                           , number = 5
+                           , classProbs=TRUE
+                           , summaryFunction = twoClassSummary),
+  # set a grid of cp values to tune on
+  tuneGrid = expand.grid(cp = c(0.00001,0.0001,0.001,0.005,0.01,0.05,0.1)),
+  metric = "ROC"
+)
+
+# AUC vs cp values
+Decision_Tree_Parameter_Tuning_Results = Decision_Tree_Tune$results 
+
+# best cp value
+Decision_Tree_Best_Tune = Decision_Tree_Tune$bestTune
+
+
+```
+
+From the ROC plot we see that the optimal value for the cp parameter is `r Decision_Tree_Best_Tune %>% pull(cp)`:
+
+```{r Decision Tree Tuned best results}
+# plot cp value vs AUC to see the best value of the parameter
+ggplot(data=Decision_Tree_Parameter_Tuning_Results, aes(x=cp, y=ROC, group=1)) +
+  geom_line()+
+  geom_point() +
+  labs(title="Complexity Parameter vs. ROC",x="CP", y = "ROC") +
+  theme_minimal()
+
+```
+
+```{r Decision Tree Model Best cp}
+set.seed(1) #set seed for reproducibility
+
+# Build the decision tree model with the best value of cp
+Decision_Tree_Model = rpart(Purchase_Yes_No ~ .
+                            , data = Train_Set %>% 
+                              select(-Purchase)
+                            , cp = Decision_Tree_Best_Tune %>% pull(cp)
+                            )
+
+# Make Predictions on Test Set
+Decision_Tree_Predictions_Test_Set = predict(Decision_Tree_Model, newdata = Test_Set %>%
+    select(-Purchase) 
+    , type = "prob"
+    ) %>%
+  as.data.frame() %>%
+  pull(`Yes`)
+
+# Calculate AUC on Test Set
+Decision_Tree_Test_Set_AUC = round(auc_roc(Decision_Tree_Predictions_Test_Set, ordered(Test_Set$Purchase)),3)
+
+Decision_Tree_Predictions_Test_Set_CM = Decision_Tree_Predictions_Test_Set %>%
+  data.frame() %>%
+   mutate(Class = ifelse(`.` >= Test_Purchase_Share,1,0)) %>%
+  pull(Class)
+
+# Plot AUC on Train Set
+# plotROC(actuals = Test_Set$Purchase, predictedScores = Log_Reg_Predictions_Test_Set)
+
+# Estimate Sensitivity Specificity on Test Set
+confmat <- confusionMatrix(Test_Set$Purchase, Decision_Tree_Predictions_Test_Set_CM)
+
+# Calculate Sensitivity, Specificity and Precision on Test set
+Decision_Tree_Sensitivity_Test_Set = round(confmat[2,]$`1`/sum(confmat[2,]),2)*100
+Decision_Tree_Specificity_Test_Set = round(confmat[1,]$`0`/sum(confmat[1,]),2)*100
+Decision_Tree_Precision_Test_Set = round(confmat[2,]$`1`/sum(confmat$`1`),2)*100
+
+```
+
+The Decision Tree Model gives the following results on the test set:
+
+* AUC: `r Decision_Tree_Test_Set_AUC`
+* Sensitivity: `r Decision_Tree_Sensitivity_Test_Set`%
+* Specificity: `r Decision_Tree_Specificity_Test_Set`%
+* Precision: `r Decision_Tree_Precision_Test_Set`%
+
+```{r Decision Tree Model Plots}
+
+# Plot AUC on Test Set
+plotROC(actuals = Test_Set$Purchase, predictedScores = Decision_Tree_Predictions_Test_Set)
+
+```
+
+### 2.6.4. Random Forest
+
+Random forests or random decision forests are an ensemble learning method for classification, regression and other tasks that operate by constructing a multitude of decision trees at training time and outputting the class that is the mode of the classes (classification) or mean prediction (regression) of the individual trees.
+
+The **mtry** parameter is tuned. This is the parameter which sets the number of variables available for splitting at each tree node. It is the most important paramter in Random Forest model and can be tuned in caret. 
+
+A 3-fold cross validation on train set is used. The value of 3 is chosen in order to speed up the calculations. Higehr values of k would need more computational time. 
+
+```{r Tune Random Forest Model}
+# tune random forest model with different mtry values
+Random_Forest_Tune = train(
+  Purchase_Yes_No ~ ., 
+  data = Train_Set %>%
+    select(-Purchase) %>%
+    # use the make.names funtion on factor predictor vars to avoid errors in model build
+    mutate(SpecialDay = make.names(SpecialDay)
+           , Month = make.names(Month)
+           , OperatingSystems = make.names(OperatingSystems)
+           , Browser = make.names(Browser)
+           , Region = make.names(Region)
+           , TrafficType = make.names(TrafficType)
+           , VisitorType = make.names(VisitorType)
+           , Weekend = make.names(Weekend)
+           )
+  , method = "rf",
+  trControl = trainControl(method = "cv"
+                           , number = 3
+                           , classProbs=TRUE
+                           , summaryFunction = twoClassSummary),
+  # set different values for mtry parameter to test
+  tuneGrid = expand.grid(mtry = c(7,9,11,13,15)),
+  metric = "ROC"
+)
+
+# mtry vs AUC table
+Random_Forest_Parameter_Tuning_Results = Random_Forest_Tune$results 
+
+#extract best mtry param
+Random_Forest_Best_Tune = Random_Forest_Tune$bestTune
+
+```
+
+From the ROC plot we see that the optimal value for the mtry parameter is `r Random_Forest_Best_Tune %>% pull(mtry)`:
+
+```{r Random Forest Tuned best results}
+# plot mtry values vs. AUC values to find optimal value of mtry
+ggplot(data=Random_Forest_Parameter_Tuning_Results, aes(x=mtry, y=ROC, group=1)) +
+  geom_line()+
+  geom_point() +
+  labs(title="Mtry vs. ROC",x="mtry", y = "ROC") +
+  theme_minimal()
+
+```
+
+```{r Random Forest Model Best mtry}
+set.seed(1) # set seed for reproducibility
+
+# create random foret model with the best mtry parameter.
+Random_Forest_Model = randomForest(Purchase ~ .
+                            , data = Train_Set %>% 
+                              select(-Purchase_Yes_No)
+                            , mtry = Random_Forest_Best_Tune %>% pull(mtry)
+                            )
+
+# Make Predictions on Test Set
+Random_Forest_Predictions_Test_Set = predict(Random_Forest_Model, newdata = Test_Set %>%
+    select(-Purchase_Yes_No) 
+    , type = "prob"
+    ) %>%
+  as.data.frame() %>%
+  pull(`1`)
+
+# Calculate AUC on Test Set
+Random_Forest_Test_Set_AUC = round(auc_roc(Random_Forest_Predictions_Test_Set, ordered(Test_Set$Purchase)),3)
+
+Random_Forest_Predictions_Test_Set_CM = Random_Forest_Predictions_Test_Set %>%
+  data.frame() %>%
+   mutate(Class = ifelse(`.` >= Test_Purchase_Share,1,0)) %>%
+  pull(Class)
+
+# Estimate Sensitivity Specificity on Test Set
+confmat <- confusionMatrix(Test_Set$Purchase, Random_Forest_Predictions_Test_Set_CM)
+
+# Calculate Sensitivity, Specificity and Precision on Test set
+Random_Forest_Sensitivity_Test_Set = round(confmat[2,]$`1`/sum(confmat[2,]),2)*100
+Random_Forest_Specificity_Test_Set = round(confmat[1,]$`0`/sum(confmat[1,]),2)*100
+Random_Forest_Precision_Test_Set = round(confmat[2,]$`1`/sum(confmat$`1`),2)*100
+
+```
+
+The Random Forest Model gives the following results on the test set:
+
+* AUC: `r Random_Forest_Test_Set_AUC`
+* Sensitivity: `r Random_Forest_Sensitivity_Test_Set`%
+* Specificity: `r Random_Forest_Specificity_Test_Set`%
+* Precision: `r Random_Forest_Precision_Test_Set`%
+
+```{r Random Forest Model Plots}
+
+# Plot AUC on Test Set
+plotROC(actuals = Test_Set$Purchase, predictedScores = Random_Forest_Predictions_Test_Set)
+
+```
+
+# 3. Results
+
+Based on the two most important metrics for the model evaluation - AUC and Precision - there is a clear winner among the 4 models tuned and tested and this is the Random Forest Model. 
+
+The final model is the Random Forest with a tuned value of mtry parameter of 15. 
+
+The `r Random_Forest_Precision_Test_Set` precision obtained by the random forest means that from all customers predicted to make a purchase `r Random_Forest_Precision_Test_Set`% would indeed make a purchase. Moreover the `r Random_Forest_Sensitivity_Test_Set` value of sensitivity means that `r Random_Forest_Sensitivity_Test_Set`% of all purchasing clients are going to be identified by the model.
+
+This gives very good opportunities to build optimized strategies for profit maximization.
+
+```{r Results Comparison, fig.show="hold", out.width="50%"}
+
+Final_Results_DF = data.frame(Model = c("Logistic Regression","Elastic Net","Decision Tree","Random Forest")
+                              , AUC = c(Log_Reg_Test_Set_AUC,Elastic_Net_Test_Set_AUC,Decision_Tree_Test_Set_AUC,Random_Forest_Test_Set_AUC)
+                              , Precision = c(Log_Reg_Precision_Test_Set,Elastic_Net_Precision_Test_Set,Decision_Tree_Precision_Test_Set,Random_Forest_Precision_Test_Set)
+                              )
+Final_Results_DF %>%
+ ggplot(aes(x=Model, y=AUC)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=AUC), vjust=-0.3, size=3.5)+
+  labs(title="Model Performance AUC",x="Model", y = "AUC") +
+  theme_minimal()
+
+Final_Results_DF %>%
+ ggplot(aes(x=Model, y=Precision)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=Precision), vjust=-0.3, size=3.5)+
+  labs(title="Model Performance Precision in %",x="Model", y = "Precision") +
+  theme_minimal()
+
+```
+
+
+# 4. Conclusion
+
+The Online Shoppers Purchasing Intention Dataset provided very good data for predictive purposes whether an online shopper would make a purchase or not. Because the outcome column indicating if a transactions ends with a purchase or not is very imbalanced - around 15% of the transactions end with a purchase - the AUC and precision metrics were chosen as the most important ones for model evaluation. The accuracy metric is very biases in cases of binary classification when one of the predicted classes is overrepresented. 
+
+Four models were tested and evaluated on test set - Logistic Regression, Elastic Net, Decision Tree and Random Forest. Because of the non-linear fashion of the data the Random Forest Model gave the best results as it comes to AUC and Precision. The best Random Forest model gives AUC of `r Random_Forest_Test_Set_AUC` and Precision of `r Random_Forest_Precision_Test_Set`%. 
+
+These values provide very good opportunities to build optimized strategies for profit maximization by better targeting purchasing clients.
+
+There is room for future improvement of the model by testing other machine learning models suitable for non-linear data such as xgBoost. The Random Forest model can be further developed if more parameters go through a tuning procedure. The results presented in this paper rely on tuning of just the mtry parameter.
+
+
+
+
+
+
+
+
